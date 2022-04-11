@@ -1,0 +1,74 @@
+name: GitHub Classroom Workflow
+on:
+  push:
+    branches:
+      - master
+jobs:
+  build:
+    name: Autograding
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      # TODO build, publish to docker hub, deploy to k8s
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_LOGIN }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+   
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@94337306dda8180d967a56932ceb4ddcf01edae7
+        with:
+          service_account_key: ${{ secrets.GC_SA_KEY }}
+          project_id: ${{ secrets.GC_PROJECT }}
+
+      - name: Get the GKE credentials
+        uses: google-github-actions/get-gke-credentials@fb08709ba27618c31c09e014e1d8364b02e5042e
+        with:
+          cluster_name: test
+          location: europe-west4-a
+          credentials: ${{ secrets.GC_SA_KEY }}
+      
+      - name: Set up Helm
+        run: |-
+          wget https://get.helm.sh/helm-v3.4.1-linux-amd64.tar.gz
+          tar xvf helm-v3.4.1-linux-amd64.tar.gz
+          mv linux-amd64/helm /usr/local/bin
+          rm helm-v3.4.1-linux-amd64.tar.gz
+          rm -rf linux-amd64
+          helm version
+          
+      - name: Deploy
+        run: |-
+          helm upgrade --install gateway Chart/ --set image=mshatbmstu/k8s_gateway:latest --set port=8000 --namespace postgres-operator
+          helm upgrade --install payment Chart/ --set image=mshatbmstu/k8s_payment:latest --set port=8002 --namespace postgres-operator
+          helm upgrade --install reservation Chart/ --set image=mshatbmstu/k8s_reservation:latest --set port=8001 --namespace postgres-operator
+          helm upgrade --install loyalty Chart/ --set image=mshatbmstu/k8s_loyalty:latest --set port=8003 --namespace postgres-operator
+          sleep 20
+      
+      
+      # TODO build, publish to docker hub, deploy to k8s
+
+      - name: Run API Tests
+        id: run-newman
+        uses: anthonyvscode/newman-action@v1
+        with:
+          # TODO insert your variant
+          collection: v/postman/collection.json
+          environment: v/postman/environment.json
+          delayRequest: 50
+          reporters: cli
+
+      - uses: education/autograding@v1
+        id: autograder
+        continue-on-error: true

@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-deployment
+  labels:
+    env: prod
+    app: {{ .Release.Name }}
+    
+spec:
+  selector:
+    matchLabels:
+      project: {{ .Release.Name }}-app
+  template:
+    metadata:
+      labels:
+        project: {{ .Release.Name }}-app
+    spec:
+      containers:
+        - name: {{ .Release.Name }}-container
+          image: {{ .Values.image }}
+          ports:
+            - containerPort: {{ .Values.port }}
+          imagePullPolicy: Always
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: hippo-pguser-hippo
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: hippo-pguser-hippo
+                  key: port
+            - name: DB_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: hippo-pguser-hippo
+                  key: dbname
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: hippo-pguser-hippo
+                  key: user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hippo-pguser-hippo
+                  key: password
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+                  
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Release.Name }}-autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v2
+    kind: Deployment
+    name: {{ .Release.Name }}-deployment
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-service
+  labels:
+    env: prod
+spec:
+  type: ClusterIP
+  selector:
+    project: {{ .Release.Name }}-app
+  ports:
+    - name: {{ .Release.Name }}-listener
+      protocol: TCP
+      port: {{ .Values.port }}
+      targetPort: {{ .Values.port }}
+  
